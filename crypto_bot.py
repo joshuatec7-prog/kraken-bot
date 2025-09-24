@@ -1,11 +1,11 @@
-# crypto_bot.py — Kraken Futures DEMO via REST
+# crypto_bot.py — Kraken Futures DEMO via REST only
 import os, time, statistics, csv, datetime, hmac, hashlib, base64, requests
 from pathlib import Path
 from urllib.parse import urlencode
 
 # ===== ENV =====
 KEY = os.getenv("KRAKENF_KEY", "")
-SECRET_B64 = os.getenv("KRAKENF_SECRET", "")            # zoals gegeven door Kraken (base64)
+SECRET_B64 = os.getenv("KRAKENF_SECRET", "")            # exact zoals Kraken geeft (base64)
 PRODUCTS = [p.strip().upper() for p in os.getenv("PRODUCTS","PI_XBTUSD,PI_ETHUSD,PI_SOLUSD,PI_XRPUSD,PI_ADAUSD").split(",") if p.strip()]
 TOTAL_BUDGET_EUR = float(os.getenv("TOTAL_BUDGET_EUR","1000"))
 SMA_LEN = int(os.getenv("SMA_LEN","20"))
@@ -40,30 +40,24 @@ def log(sym, action, price, qty, reason, after):
     print("|".join(map(str,row)), flush=True)
 
 # ===== REST HELPERS =====
-def _auth_headers(path: str, body: dict) -> dict:
+def _auth_headers(path: str, body: dict) -> tuple[dict, dict]:
     nonce = str(int(time.time()*1000))
     data = body.copy()
     data["nonce"] = nonce
     payload = urlencode(data)
-    # Authent = base64( HMAC_SHA256( base64_decode(secret), nonce + payload ) )
     secret = base64.b64decode(SECRET_B64)
-    msg = (nonce + payload).encode()
-    sig = hmac.new(secret, msg, hashlib.sha256).digest()
+    sig = hmac.new(secret, (nonce + payload).encode(), hashlib.sha256).digest()
     return {
         "APIKey": KEY,
         "Authent": base64.b64encode(sig).decode(),
         "Content-Type": "application/x-www-form-urlencoded",
     }, data
 
-def get_tickers():
+def last_prices():
     r = requests.get(f"{BASE}/tickers", timeout=10)
     r.raise_for_status()
-    return r.json().get("tickers", [])
-
-def last_prices():
-    data = get_tickers()
     mp = {}
-    for t in data:
+    for t in r.json().get("tickers", []):
         sym = str(t.get("symbol","")).upper()
         last = t.get("last") or t.get("markPrice") or t.get("bid") or t.get("ask")
         if sym and last is not None:
@@ -77,23 +71,16 @@ def last_prices():
             if alt in mp: out[want] = mp[alt]
     return out
 
-def qty_from_usd(usd):      # demo-perps: ~1 contract ≈ $1 notion
+def qty_from_usd(usd):   # demo-perps: ~1 contract ≈ $1 notioneel
     return max(1, round(usd))
 
 def place_order(symbol: str, side: str, qty: int, reduce_only=False):
     path = "/sendorder"
-    body = {
-        "orderType": "mkt",
-        "symbol": symbol,
-        "side": side,                 # "buy" of "sell"
-        "size": str(int(qty)),
-    }
-    if reduce_only:
-        body["reduceOnly"] = "true"
+    body = {"orderType":"mkt","symbol":symbol,"side":side,"size":str(int(qty))}
+    if reduce_only: body["reduceOnly"] = "true"
     headers, payload = _auth_headers(path, body)
     r = requests.post(f"{BASE}{path}", headers=headers, data=payload, timeout=10)
-    if r.status_code != 200:
-        raise RuntimeError(f"HTTP {r.status_code} {r.text}")
+    r.raise_for_status()
     resp = r.json()
     if resp.get("result") != "success":
         raise RuntimeError(f"ORDER_FAIL {resp}")
