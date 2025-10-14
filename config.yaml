@@ -1,25 +1,25 @@
 # Basic config for the Bitvavo bot
 quote: EUR
-symbols: [BTC, ETH, ADA, SOL, XRP]   # Base coins to trade against the quote
+symbols: [BTC, ETH, ADA, SOL, XRP]
 timeframe: "15m"
 sma_fast: 20
 sma_slow: 50
 
 # Risk and sizing
-fixed_stake_quote: 0        # If > 0, use that amount of quote per trade
-stake_fraction: 0.05        # If fixed_stake_quote==0, use this fraction of free quote balance
+fixed_stake_quote: 0
+stake_fraction: 0.05
 
 # Position constraints
 max_open_positions: 50
-max_pct_per_coin: 2         # per-coin cap = floor(max_open_positions * pct / 100)
+max_pct_per_coin: 2
 only_buy_if_not_in_position: true
 single_open_buy_per_coin: true
-cooldown_minutes: 30        # Minimum time between trades per coin
+cooldown_minutes: 30
 
 # Sell logic
-sell_enabled: true
-take_profit_pct: 0          # Optional. Not used by default
-stop_loss_pct: 0            # Optional. Not used by default
+sell_enabled: false
+take_profit_pct: 0
+stop_loss_pct: 0
 
 # Loop
 sleep_seconds: 60
