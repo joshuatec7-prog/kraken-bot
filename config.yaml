@@ -6,8 +6,8 @@ sma_fast: 20
 sma_slow: 50
 
 # Risk and sizing
-fixed_stake_quote: 0
-stake_fraction: 0.05
+fixed_stake_quote: 0        # zet op bv. 25 voor vast bedrag per trade
+stake_fraction: 0.05        # gebruikt als fixed_stake_quote == 0
 
 # Position constraints
 max_open_positions: 50
@@ -17,7 +17,7 @@ single_open_buy_per_coin: true
 cooldown_minutes: 30
 
 # Sell logic
-sell_enabled: false
+sell_enabled: false         # nooit verkopen; bestaande holdings blijven staan
 take_profit_pct: 0
 stop_loss_pct: 0
 
