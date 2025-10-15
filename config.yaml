@@ -1,13 +1,26 @@
-sell_enabled: true
-signals_mode: sma         # of external met je eigen signal feed
-tsb_enabled: true
-tsb_trail_pct: 1.0
-tp_pct: 2                 # voorbeeld
-tsl_pct: 3                # voorbeeld
-sell_on_cross: false      # rely op TP/TSL
-dca_enabled: true
-dca_steps: 3
-dca_drop_pct: 5
-dca_stake_multiplier: 1.2
+quote: EUR
+symbols: [BTC, ETH, ADA, SOL, XRP]
+timeframe: "15m"
+sma_fast: 20
+sma_slow: 50
+signals_mode: sma
+signals_url: ""
+fixed_stake_quote: 0
+stake_fraction: 0.05
+max_open_positions: 50
+max_pct_per_coin: 2
 only_buy_if_not_in_position: true
 single_open_buy_per_coin: true
+cooldown_minutes: 30
+tsb_enabled: false
+tsb_trail_pct: 1.0
+dca_enabled: false
+dca_steps: 3
+dca_drop_pct: 5.0
+dca_stake_multiplier: 1.0
+sell_enabled: false
+manage_only_own_positions: true
+sell_on_cross: false
+tp_pct: 0
+tsl_pct: 0
+sleep_seconds: 60
