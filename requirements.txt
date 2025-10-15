@@ -1,4 +1,1 @@
-ccxt
-PyYAML
-pandas
-numpy
+# Placeholder for requirements.txt

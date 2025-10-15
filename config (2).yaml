@@ -1,0 +1,41 @@
+# CH-achtige config
+quote: EUR
+symbols: [BTC, ETH, ADA, SOL, XRP]
+timeframe: "15m"
+sma_fast: 20
+sma_slow: 50
+
+# Signal engine
+signals_mode: sma        # sma | external
+signals_url: ""          # bij external: JSON {"buy":["BTC/EUR"], "sell":["ETH/EUR"]}
+
+# Sizing
+fixed_stake_quote: 0     # vast bedrag per trade; 0 = uit
+stake_fraction: 0.05     # fractie van vrij EUR indien fixed_stake_quote==0
+
+# Limits
+max_open_positions: 50
+max_pct_per_coin: 2
+only_buy_if_not_in_position: true
+single_open_buy_per_coin: true
+cooldown_minutes: 30
+
+# Trailing Stop-Buy
+tsb_enabled: false
+tsb_trail_pct: 1.0       # koop als prijs vanaf lokale low met dit % stijgt
+
+# DCA
+dca_enabled: false
+dca_steps: 3
+dca_drop_pct: 5.0        # bijkopen na elke daling tov laatste buy
+dca_stake_multiplier: 1.0
+
+# Selling
+sell_enabled: false      # op false om bestaande holdings nooit te verkopen
+manage_only_own_positions: true
+sell_on_cross: false     # verkoop bij SMA20 < SMA50
+tp_pct: 0                # take profit in % vanaf entry
+tsl_pct: 0               # trailing stop-loss % vanaf piek
+
+# Loop
+sleep_seconds: 60
