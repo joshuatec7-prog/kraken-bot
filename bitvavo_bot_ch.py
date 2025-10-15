@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 # Bitvavo worker met CH-achtige features:
-# - SMA-strategie of externe signalen (JSON URL)
+# - SMA- of externe signalen
 # - Trailing Stop-Buy (TSB)
-# - Trailing Stop-Loss (TSL)
-# - Take Profit (TP)
-# - DCA (gemiddeld bijkopen) met stappen
-# - Limieten: max open posities, per-munt, cooldown, enkel eigen posities beheren
-# Vereist: ccxt, PyYAML, pandas, numpy, requests
-# Render: Background Worker. Env: BITVAVO_API_KEY, BITVAVO_API_SECRET, optioneel STATE_FILE=/data/state.json
+# - Trailing Stop-Loss (TSL) en Take Profit (TP)
+# - DCA-stappen
+# - Limieten: max posities, per-munt, cooldown, alleen eigen posities beheren
+# Env: BITVAVO_API_KEY, BITVAVO_API_SECRET, optioneel STATE_FILE=/data/state.json
 
 import os, time, json, math, signal, logging
 from datetime import datetime, timedelta
@@ -20,7 +18,11 @@ import requests
 
 STATE_FILE = os.getenv("STATE_FILE", "state.json")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 def load_config(path="config.yaml"):
     with open(path, "r", encoding="utf-8") as f:
@@ -35,8 +37,8 @@ def load_state():
         except Exception:
             s = {}
     s.setdefault("last_trade_ts", {})
-    s.setdefault("positions", {})  # market -> {owned,bool, entry_price, peak_price, dca_level, last_buy_price}
-    s.setdefault("tsb", {})        # market -> {armed:bool, min_price}
+    s.setdefault("positions", {})  # market -> {owned, entry_price, peak_price, dca_level, last_buy_price}
+    s.setdefault("tsb", {})        # market -> {armed, min_price}
     return s
 
 def save_state(state):
@@ -64,22 +66,16 @@ def fetch_ohlcv_df(ex, market, timeframe="15m", limit=150):
     return df
 
 def sma(series, n): return series.rolling(n).mean()
-
-def crossover(a, b):
-    return len(a) >= 2 and len(b) >= 2 and a.iloc[-2] <= b.iloc[-2] and a.iloc[-1] > b.iloc[-1]
-
-def crossunder(a, b):
-    return len(a) >= 2 and len(b) >= 2 and a.iloc[-2] >= b.iloc[-2] and a.iloc[-1] < b.iloc[-1]
+def crossover(a, b): return len(a)>=2 and len(b)>=2 and a.iloc[-2] <= b.iloc[-2] and a.iloc[-1] > b.iloc[-1]
+def crossunder(a, b): return len(a)>=2 and len(b)>=2 and a.iloc[-2] >= b.iloc[-2] and a.iloc[-1] < b.iloc[-1]
 
 def get_free_quote(ex, quote):
     bal = ex.fetch_balance()
     return float(bal.get(quote, {}).get("free", 0.0) or 0.0)
 
 def get_open_orders(ex, market):
-    try:
-        return ex.fetch_open_orders(market)
-    except Exception:
-        return []
+    try: return ex.fetch_open_orders(market)
+    except Exception: return []
 
 def has_open_buy(ex, market):
     return any(o.get("side") == "buy" for o in get_open_orders(ex, market))
@@ -141,7 +137,7 @@ def run():
     if not markets:
         raise RuntimeError("Geen geldige markten voor de opgegeven symbols/quote")
 
-    per_coin_limit = calc_per_coin_limit(cfg["max_open_positions"], cfg["max_pct_per_coin")
+    per_coin_limit = calc_per_coin_limit(cfg["max_open_positions"], cfg["max_pct_per_coin"])
     logging.info(f"Markets: {', '.join(markets)} | per-coin limit: {per_coin_limit}")
 
     running = True
@@ -157,7 +153,7 @@ def run():
             free_q = get_free_quote(ex, quote)
             logging.info(f"Positions {total_positions}/{cfg['max_open_positions']} | Free {quote}: {free_q:.2f}")
 
-            # externe signalen optioneel
+            # externe signalen
             ext_buy, ext_sell = set(), set()
             if cfg.get("signals_mode", "sma") == "external" and cfg.get("signals_url"):
                 ext_buy, ext_sell = fetch_external_signals(cfg["signals_url"])
@@ -166,63 +162,56 @@ def run():
                 base = m.split("/")[0]
                 price = float(ex.fetch_ticker(m)["last"])
 
-                # init state pos
-                pos = state["positions"].setdefault(m, {"owned": False, "entry_price": None, "peak_price": None, "dca_level": 0, "last_buy_price": None})
+                pos = state["positions"].setdefault(
+                    m, {"owned": False, "entry_price": None, "peak_price": None, "dca_level": 0, "last_buy_price": None}
+                )
                 tsb = state["tsb"].setdefault(m, {"armed": False, "min_price": None})
 
-                # Koop-guards
+                # KOOP
                 already_in_pos = get_base_amount(ex, base) > 0.0000001
-                if cfg["only_buy_if_not_in_position"] and already_in_pos:
-                    pass
-                else:
-                    if cfg["single_open_buy_per_coin"] and has_open_buy(ex, m):
-                        pass
-                    elif not allowed_to_trade(state, m, cfg["cooldown_minutes"]):
-                        pass
-                    elif total_positions >= cfg["max_open_positions"]:
-                        pass
-                    else:
-                        # Signaal bepalen
-                        want_buy = False
-                        if cfg.get("signals_mode", "sma") == "external":
-                            want_buy = m in ext_buy
-                        else:
-                            df = fetch_ohlcv_df(ex, m, timeframe=cfg["timeframe"], limit=120)
-                            df["sma_fast"] = sma(df["close"], cfg["sma_fast"])
-                            df["sma_slow"] = sma(df["close"], cfg["sma_slow"])
-                            want_buy = crossover(df["sma_fast"], df["sma_slow"])
-
-                        # Trailing Stop-Buy
-                        if want_buy and cfg.get("tsb_enabled", False):
-                            if not tsb["armed"]:
-                                tsb["armed"] = True
-                                tsb["min_price"] = price
+                if not (cfg["only_buy_if_not_in_position"] and already_in_pos):
+                    if not (cfg["single_open_buy_per_coin"] and has_open_buy(ex, m)):
+                        if allowed_to_trade(state, m, cfg["cooldown_minutes"]) and total_positions < cfg["max_open_positions"]:
+                            # signaal
+                            want_buy = False
+                            if cfg.get("signals_mode", "sma") == "external":
+                                want_buy = m in ext_buy
                             else:
-                                tsb["min_price"] = min(tsb["min_price"], price)
-                                trigger = price >= tsb["min_price"] * (1 + cfg["tsb_trail_pct"] / 100.0)
-                                want_buy = trigger
-                                if trigger:
-                                    tsb["armed"] = False
-                                    tsb["min_price"] = None
-
-                        # Uitvoeren koop
-                        if want_buy:
-                            free_q = get_free_quote(ex, quote)
-                            stake = cfg["fixed_stake_quote"] if cfg["fixed_stake_quote"] > 0 else free_q * cfg["stake_fraction"]
-                            min_cost = (ex.markets[m]["limits"].get("cost", {}) or {}).get("min") or 5.0
-                            amount_quote = max(min_cost, min(stake, free_q))
-                            if amount_quote >= min_cost and amount_quote > 0:
-                                try:
-                                    _, fill_price = place_market_buy(ex, m, amount_quote)
-                                    mark_traded(state, m)
-                                    pos["owned"] = True
-                                    pos["entry_price"] = fill_price if pos["entry_price"] is None else pos["entry_price"]
-                                    pos["peak_price"] = fill_price if pos["peak_price"] is None else max(pos["peak_price"] or fill_price, fill_price)
-                                    pos["last_buy_price"] = fill_price
-                                    save_state(state)
-                                    total_positions += 1 if not already_in_pos else 0
-                                except Exception as e:
-                                    logging.error(f"BUY failed {m}: {e}")
+                                df = fetch_ohlcv_df(ex, m, timeframe=cfg["timeframe"], limit=120)
+                                df["sma_fast"] = sma(df["close"], cfg["sma_fast"])
+                                df["sma_slow"] = sma(df["close"], cfg["sma_slow"])
+                                want_buy = crossover(df["sma_fast"], df["sma_slow"])
+                            # TSB
+                            if want_buy and cfg.get("tsb_enabled", False):
+                                if not tsb["armed"]:
+                                    tsb["armed"] = True
+                                    tsb["min_price"] = price
+                                else:
+                                    tsb["min_price"] = min(tsb["min_price"], price)
+                                    trigger = price >= tsb["min_price"] * (1 + cfg["tsb_trail_pct"]/100.0)
+                                    want_buy = trigger
+                                    if trigger:
+                                        tsb["armed"] = False
+                                        tsb["min_price"] = None
+                            # order
+                            if want_buy:
+                                free_q = get_free_quote(ex, quote)
+                                stake = cfg["fixed_stake_quote"] if cfg["fixed_stake_quote"] > 0 else free_q * cfg["stake_fraction"]
+                                min_cost = (ex.markets[m].get("limits", {}).get("cost", {}) or {}).get("min") or 5.0
+                                amount_quote = max(min_cost, min(stake, free_q))
+                                if amount_quote >= min_cost and amount_quote > 0:
+                                    try:
+                                        _, fill_price = place_market_buy(ex, m, amount_quote)
+                                        mark_traded(state, m)
+                                        pos["owned"] = True
+                                        pos["entry_price"] = fill_price if pos["entry_price"] is None else pos["entry_price"]
+                                        pos["peak_price"] = max(pos["peak_price"] or fill_price, fill_price)
+                                        pos["last_buy_price"] = fill_price
+                                        save_state(state)
+                                        if not already_in_pos:
+                                            total_positions += 1
+                                    except Exception as e:
+                                        logging.error(f"BUY failed {m}: {e}")
 
                 # DCA
                 if pos["owned"] and cfg.get("dca_enabled", False) and pos["dca_level"] < cfg.get("dca_steps", 0):
@@ -232,7 +221,7 @@ def run():
                         base_stake = cfg["fixed_stake_quote"] if cfg["fixed_stake_quote"] > 0 else free_q * cfg["stake_fraction"]
                         mult = cfg.get("dca_stake_multiplier", 1.0) ** pos["dca_level"]
                         stake_q = base_stake * mult
-                        min_cost = (ex.markets[m]["limits"].get("cost", {}) or {}).get("min") or 5.0
+                        min_cost = (ex.markets[m].get("limits", {}).get("cost", {}) or {}).get("min") or 5.0
                         amount_quote = max(min_cost, min(stake_q, free_q))
                         if amount_quote >= min_cost and amount_quote > 0:
                             try:
@@ -244,7 +233,7 @@ def run():
                             except Exception as e:
                                 logging.error(f"DCA BUY failed {m}: {e}")
 
-                # SELL logica
+                # VERKOOP
                 if not cfg["sell_enabled"]:
                     continue
                 if cfg.get("manage_only_own_positions", True) and not pos["owned"]:
@@ -252,26 +241,19 @@ def run():
                 if get_base_amount(ex, base) <= 0:
                     continue
 
-                # Update peak
-                if pos["peak_price"] is None:
-                    pos["peak_price"] = price
-                else:
-                    pos["peak_price"] = max(pos["peak_price"], price)
+                pos["peak_price"] = max(pos["peak_price"] or price, price)
 
                 want_sell = False
                 reason = None
 
-                # TP
                 if cfg.get("tp_pct", 0) > 0 and pos["entry_price"]:
                     if price >= pos["entry_price"] * (1 + cfg["tp_pct"]/100.0):
                         want_sell, reason = True, "TP"
 
-                # TSL
                 if not want_sell and cfg.get("tsl_pct", 0) > 0 and pos["peak_price"]:
                     if price <= pos["peak_price"] * (1 - cfg["tsl_pct"]/100.0):
                         want_sell, reason = True, "TSL"
 
-                # Crossunder exit
                 if not want_sell and cfg.get("sell_on_cross", False):
                     df = fetch_ohlcv_df(ex, m, timeframe=cfg["timeframe"], limit=120)
                     df["sma_fast"] = sma(df["close"], cfg["sma_fast"])
@@ -281,13 +263,9 @@ def run():
 
                 if want_sell:
                     try:
-                        _, fill_price = place_market_sell_all(ex, m)
+                        _, _ = place_market_sell_all(ex, m)
                         mark_traded(state, m)
-                        pos["owned"] = False
-                        pos["entry_price"] = None
-                        pos["peak_price"] = None
-                        pos["dca_level"] = 0
-                        pos["last_buy_price"] = None
+                        pos.update({"owned": False, "entry_price": None, "peak_price": None, "dca_level": 0, "last_buy_price": None})
                         save_state(state)
                         logging.info(f"SOLD {m} by {reason}")
                     except Exception as e:
