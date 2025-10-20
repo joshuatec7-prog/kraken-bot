@@ -1,4 +1,3 @@
-# Quote en markten
 quote: EUR
 symbols: [BTC, ETH, ADA, SOL, XRP]
 
@@ -6,12 +5,12 @@ symbols: [BTC, ETH, ADA, SOL, XRP]
 timeframe: "5m"
 sma_fast: 9
 sma_slow: 21
-signals_mode: sma          # sma | external
-signals_url: ""            # bij external: JSON {"buy":["BTC/EUR"], "sell":["ETH/EUR"]}
+signals_mode: sma
+signals_url: ""
 
 # Inzet
-fixed_stake_quote: 15      # gegarandeerd >= minimumbedrag
-stake_fraction: 0.10       # gebruikt als fixed_stake_quote = 0
+fixed_stake_quote: 15
+stake_fraction: 0.10
 
 # Limieten
 max_open_positions: 50
@@ -31,10 +30,9 @@ dca_stake_multiplier: 1.0
 
 # Verkopen
 sell_enabled: true
-manage_only_own_positions: true    # verkoop alleen posities gekocht door deze bot
+manage_only_own_positions: true
 sell_on_cross: true
 tp_pct: 2
 tsl_pct: 3
 
-# Loop
 sleep_seconds: 30
