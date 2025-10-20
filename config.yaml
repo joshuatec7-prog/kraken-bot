@@ -1,24 +1,23 @@
-# Bitvavo CH-bot configuratie
+# Quote en markten
 quote: EUR
 symbols: [BTC, ETH, ADA, SOL, XRP]
-timeframe: "15m"
-sma_fast: 20
-sma_slow: 50
 
 # Signalen
+timeframe: "5m"
+sma_fast: 9
+sma_slow: 21
 signals_mode: sma          # sma | external
 signals_url: ""            # bij external: JSON {"buy":["BTC/EUR"], "sell":["ETH/EUR"]}
 
 # Inzet
-fixed_stake_quote: 0       # 0 = uit
-stake_fraction: 0.05       # 5% van vrij EUR
+fixed_stake_quote: 15      # gegarandeerd >= minimumbedrag
+stake_fraction: 0.10       # gebruikt als fixed_stake_quote = 0
 
 # Limieten
 max_open_positions: 50
-max_pct_per_coin: 2
 only_buy_if_not_in_position: true
 single_open_buy_per_coin: true
-cooldown_minutes: 30
+cooldown_minutes: 15
 
 # Trailing Stop-Buy
 tsb_enabled: false
@@ -30,12 +29,12 @@ dca_steps: 3
 dca_drop_pct: 5.0
 dca_stake_multiplier: 1.0
 
-# Verkopen (gebalanceerd: TP 2%, TSL 3%)
+# Verkopen
 sell_enabled: true
-manage_only_own_positions: true   # verkoop alleen posities gekocht door deze bot
-sell_on_cross: false
+manage_only_own_positions: true    # verkoop alleen posities gekocht door deze bot
+sell_on_cross: true
 tp_pct: 2
 tsl_pct: 3
 
 # Loop
-sleep_seconds: 60
+sleep_seconds: 30
